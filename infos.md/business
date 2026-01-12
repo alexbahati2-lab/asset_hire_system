@@ -1,0 +1,176 @@
+# Asset Hire System – Business & Technical Specification
+
+## 1. Purpose
+
+This document defines the **business rules, data model, and payment workflow** for the Asset Hire System. It serves as a single source of truth for development, testing, onboarding, and client sign‑off.
+
+---
+
+## 2. Business Overview
+
+The system manages **daily asset hiring**, tracks **end‑of‑day payments via M‑Pesa**, and enforces **repossession rules** when payment is not received.
+
+**Key principle:** Assets are issued first and paid for at the end of the day.
+
+---
+
+## 3. Actors & Roles
+
+* **Admin**: Assigns assets, requests payments, views reports, repossesses assets
+* **Hirer (Person)**: Uses the asset and pays via M‑Pesa
+* **M‑Pesa Platform**: Processes payments and sends callbacks
+
+---
+
+## 4. Core Business Rules
+
+1. An asset can only be assigned if its status is **Available**
+2. Payment is expected **after usage**, before the end‑of‑day cutoff
+3. If payment is not received by cutoff time:
+
+   * Hire status becomes **Overdue**
+   * Asset must be **repossessed**
+4. Successful payment:
+
+   * Marks hire as **Paid**
+   * Asset remains assigned
+5. All money records are immutable and audit‑ready
+
+---
+
+## 5. Data Model
+
+### 5.1 Person
+
+Stores information about individuals hiring assets.
+
+| Field     | Type   | Notes                      |
+| --------- | ------ | -------------------------- |
+| full_name | String | Required                   |
+| id_number | String | Required, unique           |
+| phone     | String | Required (used for M‑Pesa) |
+| email     | Email  | Optional                   |
+
+---
+
+### 5.2 Asset
+
+Stores information about rentable assets.
+
+| Field               | Type   | Notes                              |
+| ------------------- | ------ | ---------------------------------- |
+| name                | String | e.g. Generator                     |
+| brand               | String | e.g. Honda                         |
+| registration_number | String | Unique                             |
+| status              | Choice | Available / Assigned / Repossessed |
+
+---
+
+### 5.3 Hire
+
+Represents a daily hire transaction (usage record).
+
+| Field        | Type       | Notes                                 |
+| ------------ | ---------- | ------------------------------------- |
+| person       | FK(Person) | Hirer                                 |
+| asset        | FK(Asset)  | Assigned asset                        |
+| hire_date    | Date       | Auto                                  |
+| due_datetime | DateTime   | End‑of‑day cutoff                     |
+| daily_rate   | Decimal    | Hire cost                             |
+| status       | Choice     | Active / Paid / Overdue / Repossessed |
+
+---
+
+### 5.4 Payment
+
+Stores M‑Pesa payment records.
+
+| Field         | Type     | Notes                      |
+| ------------- | -------- | -------------------------- |
+| hire          | FK(Hire) | Linked hire                |
+| amount        | Decimal  | Paid amount                |
+| mpesa_receipt | String   | Unique                     |
+| phone         | String   | Paying number              |
+| status        | Choice   | Pending / Success / Failed |
+| paid_at       | DateTime | Callback time              |
+
+---
+
+## 6. Daily Operational Flow
+
+### Morning
+
+* Admin assigns asset to person
+* Hire created with status **Active**
+
+### End of Day
+
+* System or admin triggers **M‑Pesa STK Push**
+* Hirer receives payment prompt
+
+### Payment Outcomes
+
+* **Success** → Hire marked **Paid**, asset stays assigned
+* **No payment** → Hire marked **Overdue**, asset repossessed
+
+---
+
+## 7. M‑Pesa Integration Logic
+
+### 7.1 STK Push
+
+Triggered at end of day using:
+
+* Person phone number
+* Hire amount
+* Hire reference
+
+### 7.2 Callback Handling
+
+Safaricom sends payment result to callback endpoint.
+
+System actions:
+
+1. Validate callback
+2. Save payment record
+3. Update hire status
+4. Update asset status
+
+---
+
+## 8. Reporting
+
+All reports are available via **Django Admin**.
+
+* Daily payments
+* Monthly payments
+* Payments per person
+* Overdue hires
+* Asset utilization
+
+---
+
+## 9. Security & Audit
+
+* Payments recorded only via callbacks
+* No manual amount editing
+* All timestamps stored
+* Admin actions logged
+
+---
+
+## 10. Future Extensions
+
+* SMS reminders for overdue hires
+* Partial payments
+* Multi‑day hires
+* Mobile app frontend
+
+---
+
+## 11. Approval
+
+This document represents the agreed‑upon logic and flow for the Asset Hire System.
+
+**Client / Admin Approval:** ______________________
+**Date:** ______________________
