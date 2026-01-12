@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+import uuid
 
 
 # -----------------------------
@@ -7,10 +8,10 @@ from django.utils import timezone
 # -----------------------------
 class Person(models.Model):
     full_name = models.CharField(max_length=200)
-    national_id = models.CharField(max_length=50, unique=True)  # MUST HAVE
+    national_id = models.CharField(max_length=50, unique=True)
     unique_id = models.CharField(
         max_length=50, blank=True, null=True, unique=True
-    )  # OPTIONAL (internal / card / tag)
+    )
     phone = models.CharField(max_length=20)
     email = models.EmailField(blank=True, null=True)
 
@@ -55,17 +56,26 @@ class Hire(models.Model):
     hire_date = models.DateField(default=timezone.now)
     due_datetime = models.DateTimeField()
     daily_rate = models.DecimalField(max_digits=10, decimal_places=2)
+
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='active'
     )
 
+    # 🔑 AUTO-GENERATED PAYMENT REFERENCE
+    reference_id = models.CharField(
+        max_length=12, unique=True, editable=False, blank=True
+    )
+
     def save(self, *args, **kwargs):
-        # Assign asset when hire is active or paid
+        # Generate unique reference ID once
+        if not self.reference_id:
+            self.reference_id = uuid.uuid4().hex[:12].upper()
+
+        # Asset status handling
         if self.status in ['active', 'paid']:
             self.asset.status = 'assigned'
             self.asset.save()
 
-        # Repossess asset
         if self.status in ['overdue', 'repossessed']:
             self.asset.status = 'repossessed'
             self.asset.save()
@@ -73,8 +83,7 @@ class Hire(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Hire #{self.id} - {self.person.full_name}"
-
+        return f"Hire {self.reference_id} - {self.person.full_name}"
 
 
 # -----------------------------
@@ -87,16 +96,42 @@ class Payment(models.Model):
         ('failed', 'Failed'),
     ]
 
-    hire = models.ForeignKey(Hire, on_delete=models.PROTECT, related_name='payments')
+    hire = models.ForeignKey(
+        Hire, on_delete=models.PROTECT, related_name='payments'
+    )
+
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     phone = models.CharField(max_length=20)
+
     mpesa_receipt = models.CharField(
         max_length=100, blank=True, null=True, unique=True
     )
+
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='pending'
     )
+
     paid_at = models.DateTimeField(blank=True, null=True)
 
+    # 🔗 STORED FOR QUICK LOOKUP & CALLBACK MATCHING
+    hire_reference = models.CharField(
+        max_length=12, editable=False, blank=True
+    )
+
+    def save(self, *args, **kwargs):
+        # Auto-copy hire reference
+        if self.hire and not self.hire_reference:
+            self.hire_reference = self.hire.reference_id
+
+        # Auto-set paid time on success
+        if self.status == 'success' and not self.paid_at:
+            self.paid_at = timezone.now()
+
+            # Mark hire as paid
+            self.hire.status = 'paid'
+            self.hire.save()
+
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Payment {self.amount} - {self.status}"
+        return f"Payment {self.hire_reference} - {self.amount} ({self.status})"

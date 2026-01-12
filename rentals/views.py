@@ -1,37 +1,100 @@
-from django.shortcuts import render
-
-# Create your views here.
 # rentals/views.py
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse, HttpResponse
-import json
-from .models import Hire, Payment
 from django.utils import timezone
+import json
+import os
+import requests
+from requests.auth import HTTPBasicAuth
 
+from .models import Hire, Payment
+
+# -----------------------------
+# M-PESA Access Token Helper
+# -----------------------------
+def get_mpesa_access_token():
+    """
+    Fetches an access token from Safaricom Daraja Sandbox.
+    Requires environment variables:
+        MPESA_CONSUMER_KEY
+        MPESA_CONSUMER_SECRET
+    """
+    consumer_key = os.getenv("MPESA_CONSUMER_KEY")
+    consumer_secret = os.getenv("MPESA_CONSUMER_SECRET")
+
+    if not consumer_key or not consumer_secret:
+        raise Exception("Daraja credentials missing in environment variables.")
+
+    url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+    
+    response = requests.get(url, auth=HTTPBasicAuth(consumer_key, consumer_secret))
+    response.raise_for_status()  # Will raise if HTTP error occurs
+
+    data = response.json()
+    token = data.get("access_token")
+    if not token:
+        raise Exception("Failed to retrieve M-Pesa access token.")
+    return token
+
+# -----------------------------
+# C2B Callback Endpoint
+# -----------------------------
 @csrf_exempt
 def c2b_callback(request):
+    """
+    M-Pesa C2B callback endpoint.
+
+    Expected important fields from Safaricom:
+        - TransID
+        - TransAmount
+        - MSISDN
+        - BillRefNumber  -> maps to Hire.reference_id
+    """
+    if request.method != "POST":
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Invalid request method"}
+        )
+
     try:
-        data = json.loads(request.body)
-        trans_id = data.get('TransID')
-        phone = data.get('MSISDN')
-        amount = float(data.get('TransAmount', 0))
-        bill_ref = data.get('BillRefNumber')  # maps to Hire.id
+        # Parse JSON payload safely
+        data = json.loads(request.body.decode("utf-8"))
 
-        hire = Hire.objects.filter(id=bill_ref).first()
-        if hire:
-            payment, created = Payment.objects.get_or_create(hire=hire)
-            payment.amount = amount
-            payment.status = "paid"
-            payment.mpesa_receipt = trans_id
-            payment.paid_at = timezone.now()
-            payment.phone = phone
-            payment.save()
+        trans_id = data.get("TransID")
+        phone = data.get("MSISDN")
+        amount = float(data.get("TransAmount", 0))
+        bill_ref = data.get("BillRefNumber")  # Maps to Hire.reference_id
 
-            # Optionally update hire status too
-            hire.status = "paid"
-            hire.save()
+        if not bill_ref:
+            return JsonResponse({"ResultCode": 1, "ResultDesc": "Missing BillRefNumber"})
 
-        return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+        # Find the hire using reference_id
+        hire = Hire.objects.filter(reference_id=bill_ref).first()
+        if not hire:
+            return JsonResponse({"ResultCode": 1, "ResultDesc": "Hire not found"})
+
+        # Prevent duplicate payments
+        if Payment.objects.filter(mpesa_receipt=trans_id).exists():
+            return JsonResponse({"ResultCode": 0, "ResultDesc": "Duplicate transaction ignored"})
+
+        # Create the payment record
+        payment = Payment.objects.create(
+            hire=hire,
+            amount=amount,
+            phone=phone,
+            mpesa_receipt=trans_id,
+            status="success",
+            paid_at=timezone.now(),
+        )
+
+        # Update hire status
+        hire.status = "paid"
+        hire.save()
+
+        return JsonResponse({"ResultCode": 0, "ResultDesc": "Payment received successfully"})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"ResultCode": 1, "ResultDesc": "Invalid JSON payload"})
+
     except Exception as e:
-        print("C2B Callback Error:", e)
-        return JsonResponse({"ResultCode": 1, "ResultDesc": "Failed"})
+        print("❌ C2B CALLBACK ERROR:", str(e))
+        return JsonResponse({"ResultCode": 1, "ResultDesc": "Internal server error"})
