@@ -15,26 +15,27 @@ from .models import Hire, Payment
 def get_mpesa_access_token():
     """
     Fetches an access token from Safaricom Daraja Sandbox.
-    Requires environment variables:
-        MPESA_CONSUMER_KEY
-        MPESA_CONSUMER_SECRET
+    Uses environment variables if set; otherwise defaults to sandbox.
     """
-    consumer_key = os.getenv("MPESA_CONSUMER_KEY")
-    consumer_secret = os.getenv("MPESA_CONSUMER_SECRET")
-
-    if not consumer_key or not consumer_secret:
-        raise Exception("Daraja credentials missing in environment variables.")
+    consumer_key = os.getenv("MPESA_CONSUMER_KEY", "D09FtPvxJeiXeeFzZVZvRnYzragBgyHlA3DDLQ5vGVlNAyHD")
+    consumer_secret = os.getenv("MPESA_CONSUMER_SECRET", "qvmUSsX3HcMmRKBTc9Xgbq6g5apeqcMx6oec63GlkfS7ihnMP3ok5Z3dXSqCU25A")
 
     url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
     
     response = requests.get(url, auth=HTTPBasicAuth(consumer_key, consumer_secret))
-    response.raise_for_status()  # Will raise if HTTP error occurs
+    response.raise_for_status()  # Raise if HTTP error occurs
 
     data = response.json()
     token = data.get("access_token")
     if not token:
         raise Exception("Failed to retrieve M-Pesa access token.")
     return token
+
+# -----------------------------
+# Default Sandbox Paybill / Till
+# -----------------------------
+MPESA_PAYBILL = os.getenv("MPESA_PAYBILL", "600000")
+MPESA_TILL = os.getenv("MPESA_TILL", "601234")
 
 # -----------------------------
 # C2B Callback Endpoint
@@ -51,9 +52,7 @@ def c2b_callback(request):
         - BillRefNumber  -> maps to Hire.reference_id
     """
     if request.method != "POST":
-        return JsonResponse(
-            {"ResultCode": 1, "ResultDesc": "Invalid request method"}
-        )
+        return JsonResponse({"ResultCode": 1, "ResultDesc": "Invalid request method"})
 
     try:
         # Parse JSON payload safely
