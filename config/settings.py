@@ -14,26 +14,21 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # --------------------------------------------------
 # SECURITY SETTINGS
 # --------------------------------------------------
 
-# SECRET KEY (must come from environment in production)
 SECRET_KEY = env_config(
     "DJANGO_SECRET_KEY",
     default="django-insecure-v-^-d0^%#@!)jal=r#$1mo8ps%6#l)e)u8(+1m5#7g&!@wck_$"
 )
 
-# DEBUG should NEVER be hardcoded in production
-DEBUG = env_config("DJANGO_DEBUG", default=True, cast=bool)
+DEBUG = env_config("DJANGO_DEBUG", default=False, cast=bool)
 
-# Allow all during early deployment (tighten later)
 ALLOWED_HOSTS = env_config(
     "DJANGO_ALLOWED_HOSTS",
     default="*"
 ).split(",")
-
 
 # --------------------------------------------------
 # APPLICATION DEFINITION
@@ -54,6 +49,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # for serving static files on Render
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -67,7 +63,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / "templates"],  # ready for future use
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -82,14 +78,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-
 # --------------------------------------------------
-# DATABASE (PostgreSQL for asset hire system)
+# DATABASE
 # --------------------------------------------------
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': env_config('DB_ENGINE', default='django.db.backends.postgresql'),
         'NAME': env_config('DB_NAME', default='asset_hire_system'),
         'USER': env_config('DB_USER', default='hire_user'),
         'PASSWORD': env_config('DB_PASSWORD', default='Alex@bahati'),
@@ -97,7 +92,6 @@ DATABASES = {
         'PORT': env_config('DB_PORT', default='5432'),
     }
 }
-
 
 # --------------------------------------------------
 # PASSWORD VALIDATION
@@ -110,7 +104,6 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
 # --------------------------------------------------
 # INTERNATIONALIZATION
 # --------------------------------------------------
@@ -120,7 +113,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-
 # --------------------------------------------------
 # STATIC FILES (PRODUCTION READY)
 # --------------------------------------------------
@@ -129,6 +121,8 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"] if DEBUG else []
 
+# WhiteNoise configuration for Render
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # --------------------------------------------------
 # DEFAULT PRIMARY KEY
@@ -136,9 +130,8 @@ STATICFILES_DIRS = [BASE_DIR / "static"] if DEBUG else []
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
 # --------------------------------------------------
-# MPESA CONFIG (ENV-FIRST, SAFE DEFAULTS)
+# MPESA CONFIG
 # --------------------------------------------------
 
 MPESA_CONSUMER_KEY = env_config(
@@ -153,3 +146,14 @@ MPESA_CONSUMER_SECRET = env_config(
 
 MPESA_PAYBILL = env_config("MPESA_PAYBILL", default="600000")
 MPESA_TILL = env_config("MPESA_TILL", default="601234")
+
+# --------------------------------------------------
+# SECURITY ENHANCEMENTS FOR PRODUCTION
+# --------------------------------------------------
+
+SECURE_SSL_REDIRECT = env_config("DJANGO_SECURE_SSL_REDIRECT", default=True, cast=bool)
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_HSTS_SECONDS = 3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
