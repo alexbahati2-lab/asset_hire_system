@@ -84,20 +84,17 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 # --------------------------------------------------
-# DATABASE (UNCHANGED – as requested)
+# DATABASE (PostgreSQL for asset hire system)
 # --------------------------------------------------
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': env_config('DB_NAME', default='asset_hire_db'),
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': env_config('DB_NAME', default='asset_hire_system'),
         'USER': env_config('DB_USER', default='hire_user'),
         'PASSWORD': env_config('DB_PASSWORD', default='Alex@bahati'),
         'HOST': env_config('DB_HOST', default='localhost'),
-        'PORT': env_config('DB_PORT', default='3306'),
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        }
+        'PORT': env_config('DB_PORT', default='5432'),
     }
 }
 
